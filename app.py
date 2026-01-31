@@ -38,7 +38,10 @@ st.markdown("""
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_current_questions():
-    df = conn.read(worksheet="Questions")
+    # Adăugăm ttl=0 pentru a nu păstra date vechi în cache în timpul testării
+    df = conn.read(worksheet="Questions", ttl=0) 
+    # Conversie coloană data în string pentru siguranță
+    df['date'] = df['date'].astype(str)
     today = datetime.now().strftime('%Y-%m-%d')
     return df[df['date'] == today].to_dict('records')
 
@@ -108,4 +111,5 @@ with tab2:
         Total=('question_id', 'count'),
         Corecte=('is_correct', 'sum')
     ).sort_values(by='Corecte', ascending=False)
+
     st.table(ranking)
