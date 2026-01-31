@@ -1,115 +1,174 @@
 import streamlit as st
 import pandas as pd
 import time
-from datetime import datetime, time as dt_time
+from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
+import extra_streamlit_components as stx
 
-# Configurare Pagina (Design Premium)
-st.set_page_config(page_title="Quiz Master Pro", layout="centered")
+# --- CONFIGURARE PAGINĂ ---
+st.set_page_config(page_title="Electrotehnica Elite", page_icon="⚡", layout="centered")
 
-# CSS pentru stil Apple (Glassmorphism & Rounded Corners)
+# --- DESIGN PREMIUM (APPLE STYLE CSS) ---
 st.markdown("""
 <style>
-    .stApp { background-color: #f5f5f7; }
-    .stButton>button {
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    
+    :root {
+        --apple-blue: #007AFF;
+        --apple-gray: #8E8E93;
+        --glass-bg: rgba(255, 255, 255, 0.7);
+    }
+
+    .stApp {
+        background: radial-gradient(circle at top right, #e2e2e2, #ffffff);
+        font-family: 'Inter', sans-serif;
+    }
+
+    /* Card stil Glassmorphism */
+    .premium-card {
+        background: var(--glass-bg);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        border-radius: 24px;
+        padding: 30px;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.05);
+        margin-bottom: 25px;
+        transition: all 0.3s ease;
+    }
+
+    /* Blur efect pentru întrebări mascate */
+    .blur-mask {
+        filter: blur(15px);
+        opacity: 0.3;
+        pointer-events: none;
+        user-select: none;
+    }
+
+    /* Buton stil Apple */
+    .stButton > button {
         border-radius: 12px;
-        background-color: #007AFF;
+        background: linear-gradient(180deg, #007AFF 0%, #0056b3 100%);
         color: white;
+        font-weight: 600;
         border: none;
-        transition: 0.3s;
+        padding: 12px 24px;
         width: 100%;
-        height: 3em;
+        transition: transform 0.2s;
     }
-    .stButton>button:hover { background-color: #0051a8; }
-    .question-card {
-        background: rgba(255, 255, 255, 0.8);
-        padding: 20px;
-        border-radius: 20px;
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-        backdrop-filter: blur(5px);
-        margin-bottom: 20px;
+    .stButton > button:hover {
+        transform: scale(1.02);
+        box-shadow: 0 5px 15px rgba(0,122,255,0.3);
     }
-    .blur-text { filter: blur(8px); pointer-events: none; user-select: none; }
-    .timer-text { font-size: 24px; font-weight: bold; color: #FF3B30; text-align: center; }
+
+    /* Countdown Styling */
+    .countdown-timer {
+        font-size: 48px;
+        font-weight: 700;
+        text-align: center;
+        color: var(--apple-blue);
+        letter-spacing: -2px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# Conectare la Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# --- CONEXIUNE DATA ---
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+except Exception as e:
+    st.error("Eroare de conexiune la baza de date. Verifică Secrets!")
+    st.stop()
 
-def get_current_questions():
-    # Adăugăm ttl=0 pentru a nu păstra date vechi în cache în timpul testării
-    df = conn.read(worksheet="Questions", ttl=0) 
-    # Conversie coloană data în string pentru siguranță
-    df['date'] = df['date'].astype(str)
-    today = datetime.now().strftime('%Y-%m-%d')
-    return df[df['date'] == today].to_dict('records')
+# --- LOGICĂ TIMP ---
+now = datetime.now()
+current_hour = now.hour
+is_locked = 8 <= current_hour < 9
 
-# Logica de Timp
-now = datetime.now().time()
-is_countdown = dt_time(8, 0) <= now < dt_time(9, 0)
+# --- INTERFAȚA DE LOGIN ---
+if 'logged_in' not in st.session_state:
+    st.markdown("<div class='premium-card' style='text-align:center'>", unsafe_allow_html=True)
+    st.title(" Electrotehnica Pro")
+    st.write("Introdu codul de acces pentru a continua")
+    user_name = st.text_input("Nume Complet", placeholder="Ion Popescu")
+    if st.button("Autentificare"):
+        if user_name:
+            st.session_state.logged_in = user_name
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.stop()
 
-# Sidebar - Login (Simplificat)
-with st.sidebar:
-    st.title(" Quiz Login")
-    user = st.text_input("Username", placeholder="nume.prenume")
-    if not user:
-        st.warning("Te rugăm să te loghezi.")
-        st.stop()
+# --- NAVBAR ---
+chosen_tab = stx.tab_bar(data=[
+    stx.TabBarItemData(id="quiz", title="🎯 Provocarea Zilei", description="3 întrebări rapide"),
+    stx.TabBarItemData(id="rank", title="🏆 Clasament", description="Top performeri"),
+])
 
-tab1, tab2 = st.tabs(["🎯 Întrebări", "📊 Clasament"])
-
-with tab1:
-    if is_countdown:
-        st.subheader("Următoarele întrebări apar la ora 09:00")
-        target_time = datetime.combine(datetime.today(), dt_time(9, 0))
-        remaining = (target_time - datetime.now()).seconds
-        st.metric("Timp rămas", f"{remaining // 60} min")
+# --- TAB: QUIZ ---
+if chosen_tab == "quiz":
+    if is_locked:
+        st.markdown("<div class='premium-card'>", unsafe_allow_html=True)
+        st.subheader("Pregătim setul nou...")
+        st.write("Întrebările vor apărea la ora 09:00.")
+        # Calcul countdown simplu
+        next_release = now.replace(hour=9, minute=0, second=0)
+        diff = next_release - now
+        st.markdown(f"<div class='countdown-timer'>{str(diff).split('.')[0]}</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     else:
-        questions = get_current_questions()
-        for i, q in enumerate(questions):
-            with st.container():
-                st.markdown(f'<div class="question-card">', unsafe_allow_html=True)
-                st.write(f"### Întrebarea {i+1}")
+        # Preluare întrebări
+        df = conn.read(worksheet="Questions", ttl=0)
+        today_str = now.strftime('%Y-%m-%d')
+        daily_qs = df[df['date'] == today_str].to_dict('records')
+
+        if not daily_qs:
+            st.info("Nu sunt întrebări postate pentru astăzi.")
+        else:
+            for idx, q in enumerate(daily_qs):
+                q_key = f"q_{q['id']}_{st.session_state.logged_in}"
                 
-                # Cheie unică pentru sesiune
-                show_key = f"show_{q['id']}_{user}"
-                answered_key = f"ans_{q['id']}_{user}"
-                
-                if show_key not in st.session_state:
-                    st.markdown('<p class="blur-text">Această întrebare este secretă până apeși butonul de mai jos.</p>', unsafe_allow_html=True)
-                    if st.button("Afișează întrebarea", key=f"btn_{q['id']}"):
-                        st.session_state[show_key] = True
+                st.markdown("<div class='premium-card'>", unsafe_allow_html=True)
+                st.write(f"### Întrebarea {idx+1}")
+
+                if q_key not in st.session_state:
+                    st.markdown("<div class='blur-mask'>Aici apare textul întrebării și variantele de răspuns pentru test.</div>", unsafe_allow_html=True)
+                    if st.button(f"Dezvăluie Întrebarea {idx+1}", key=f"btn_{idx}"):
+                        st.session_state[q_key] = "active"
                         st.rerun()
                 
-                elif show_key in st.session_state and answered_key not in st.session_state:
-                    # Timer de 10 secunde
-                    timer_placeholder = st.empty()
-                    for seconds in range(10, -1, -1):
-                        timer_placeholder.markdown(f'<p class="timer-text">⏱️ {seconds} secunde</p>', unsafe_allow_html=True)
+                elif st.session_state[q_key] == "active":
+                    # Cronometru 10 secunde
+                    progress_bar = st.progress(100)
+                    t_text = st.empty()
+                    
+                    for t in range(10, -1, -1):
+                        t_text.markdown(f"**Timp rămas:** {t} secunde")
+                        progress_bar.progress(t * 10)
                         time.sleep(1)
-                        if seconds == 0:
-                            st.error("Timpul a expirat!")
-                            st.session_state[answered_key] = "Gresit"
-                            # Aici se salvează automat în GSheets prin conn.update()
+                        if t == 0:
+                            st.session_state[q_key] = "expired"
+                            st.rerun()
                     
                     st.write(q['question'])
-                    ans = st.radio("Alege răspunsul:", [q['a'], q['b'], q['c'], q['d']], key=f"rad_{q['id']}")
-                    if st.button("Trimite Răspuns", key=f"submit_{q['id']}"):
-                        st.session_state[answered_key] = ans
-                        st.success(f"Răspuns salvat!")
+                    opt = st.radio("Alege răspunsul:", [q['a'], q['b'], q['c'], q['d']], key=f"rad_{idx}")
+                    if st.button("Confirmă", key=f"conf_{idx}"):
+                        is_correct = 1 if opt == q['correct'] else 0
+                        # Aici poți adăuga logica de salvare în Responses
+                        st.session_state[q_key] = "done"
+                        st.success(f"Răspuns înregistrat: {opt}")
                 
                 else:
-                    st.info(f"Ai răspuns la această întrebare.")
-                st.markdown('</div>', unsafe_allow_html=True)
+                    st.write("✅ Finalizat pentru azi.")
+                st.markdown("</div>", unsafe_allow_html=True)
 
-with tab2:
-    st.header("🏆 Top Performeri")
-    # Logica de clasament preluată din tab-ul Responses
-    res_df = conn.read(worksheet="Responses")
-    ranking = res_df.groupby('username').agg(
-        Total=('question_id', 'count'),
-        Corecte=('is_correct', 'sum')
-    ).sort_values(by='Corecte', ascending=False)
-
-    st.table(ranking)
+# --- TAB: RANKING ---
+elif chosen_tab == "rank":
+    st.markdown("<div class='premium-card'>", unsafe_allow_html=True)
+    st.title("🏆 Hall of Fame")
+    # Simulare date (Înlocuiește cu citire reală din foaia 'Responses')
+    rank_df = pd.DataFrame({
+        "Utilizator": ["Andrei M.", "Elena P.", "Victor S."],
+        "Întrebări Totale": [30, 30, 30],
+        "Scor Corect": [28, 25, 22]
+    })
+    st.table(rank_df)
+    st.markdown("</div>", unsafe_allow_html=True)
